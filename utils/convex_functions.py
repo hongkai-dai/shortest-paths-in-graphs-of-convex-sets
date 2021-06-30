@@ -10,6 +10,9 @@ class ConvexFunction():
 
         return cost, domain
 
+    def check_perspective_constraint(self, slack, scale, x, tol):
+        self._check_perspective_constraint(slack, scale, x, tol)
+
     def enforce_domain(self, prog, scale, x):
         if self.D is not None:
             return self.D.add_perspective_constraint(prog, scale, x)
@@ -26,6 +29,9 @@ class Constant(ConvexFunction):
 
         return prog.AddLinearConstraint(slack >= self.c * scale)
 
+    def _check_perspective_constraint(self, slack, scale, x, tol):
+        assert slack + tol >= self.c * scale, f"slack {slack}, c * scale {self.c * scale}"
+
 class TwoNorm(ConvexFunction):
     """Function of the form ||H x||_2 for x in D, where D is a ConvexSet."""
 
@@ -39,6 +45,10 @@ class TwoNorm(ConvexFunction):
         Hx = self.H.dot(x)
         return prog.AddLorentzConeConstraint(slack, Hx.dot(Hx))
 
+    def _check_perspective_constraint(self, slack, scale, x, tol):
+        Hx = self.H.dot(x)
+        assert slack + tol >= np.linalg.norm(Hx), f"slack {slack}, Hx norm {np.linalg.norm(Hx)}"
+
 class SquaredTwoNorm(ConvexFunction):
     """Function of the form ||H x||_2^2 for x in D, where D is a ConvexSet."""
 
@@ -48,6 +58,11 @@ class SquaredTwoNorm(ConvexFunction):
         self.D = D
 
     def _add_perspective_constraint(self, prog, slack, scale, x):
-
         Hx = self.H.dot(x)
         return prog.AddRotatedLorentzConeConstraint(slack, scale, Hx.dot(Hx))
+
+    def _check_perspective_constraint(self, slack, scale, x, tol):
+        assert slack >= -tol, f"{slack}"
+        assert scale >= -tol, f"{scale}"
+        Hx = self.H.dot(x)
+        assert slack * scale + tol >= np.sum(Hx ** 2), f"slack * scale {slack * scale}, Hx squared norm {np.sum(Hx ** 2)}"

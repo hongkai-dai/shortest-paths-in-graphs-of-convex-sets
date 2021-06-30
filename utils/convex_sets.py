@@ -24,6 +24,9 @@ class ConvexSet():
     def add_perspective_constraint(self, prog, scale, x):
         raise NotImplementedError
 
+    def check_perspective_constraint(self, scale, x, tol):
+        pass
+
     def _cheb_constraint(self, prog, x, r):
         raise NotImplementedError
 
@@ -66,6 +69,9 @@ class Singleton(ConvexSet):
 
     def add_perspective_constraint(self, prog, scale, x):
         return prog.AddLinearConstraint(eq(x, self.center * scale))
+
+    def check_perspective_constraint(self, scale, x, tol):
+        assert np.linalg.norm(x - self.center * scale) < tol, f"x {x}, center * scale {self.center * scale}"
 
     def _plot(self, **kwargs):
         plt.scatter(*self.center, c='k')
@@ -140,6 +146,14 @@ class Polyhedron(ConvexSet):
             ineq_matrices = prog.AddLinearConstraint(le(residual, 0))
 
         return eq_matrices, ineq_matrices
+
+    def check_perspective_constraint(self, scale, x, tol):
+        if self.A.shape[0] != 0:
+            assert np.linalg.norm(self.A.dot(x) - self.b * scale) < tol
+
+        if self.C.shape[0] != 0:
+            assert np.all(self.C.dot(x) - self.d * scale < tol), f"C*x - d*scale {self.C.dot(x) - self.d * scale}"
+
 
     def _plot(self, **kwargs):
 
@@ -247,6 +261,12 @@ class Ellipsoid(ConvexSet):
 
         return cone_constraint
 
+    def check_perspective_constraint(self, scale, x, tol):
+        R = sp.linalg.sqrtm(self.A)
+        v = np.concatenate(([scale], R.dot(x - self.center * scale)))
+        assert scale + tol  >= np.linalg.norm(R.dot(x - self.center * scale)), f"scale {scale}, rhs {np.linalg.norm(R.dot(x - self.center * scale))}"
+
+
     def _cheb_constraint(self, prog, x, r):
         '''Section 8.5.1 of Boyd and Vandenberghe - Convex Optimization.'''
         
@@ -301,6 +321,9 @@ class Intersection(ConvexSet):
 
     def add_perspective_constraint(self, prog, scale, x):
         return [X.add_perspective_constraint(prog, scale, x) for X in self.sets]
+
+    def check_perspective_constraint(self, scale, x, tol):
+        [X.check_perspective_constraint(scale, x, tol) for X in self.sets]
 
     def _compute_center(self):
 
@@ -357,6 +380,9 @@ class CartesianProduct(ConvexSet):
 
     def add_perspective_constraint(self, prog, scale, x):
         return [X.add_perspective_constraint(prog, scale, p) for p, X in zip(self.split(x), self.sets)]
+
+    def check_perspective_constraint(self, scale, x, tol):
+        [X.check_perspective_constraint(scale, p, tol) for p, X in zip(self.split(x), self.sets)]
 
     def _compute_center(self):
         return np.concatenate([X.center for X in self.sets])
