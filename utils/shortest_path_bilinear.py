@@ -1,5 +1,7 @@
 import numpy as np
 import pydrake.solvers.mathematicalprogram as mp
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 
 class ShortestPathVariables():
@@ -59,7 +61,7 @@ class ShortestPathConstraints():
                 deg.append(prog.AddLinearConstraint(residual <= 0))
 
             # spatial constraint x ∈ graph_set
-            graph_set.add_membership_constraint(
+            graph_set.add_constraint_nlp(
                 prog, vars.x[graph.vertex_index(vertex)])
 
         for k, edge in enumerate(graph.edges):
@@ -83,3 +85,17 @@ class ShortestPathProblem():
             self.prog, graph, self.vars)
         self.prog.AddQuadraticCost(
             sum(self.vars.l * self.vars.phi), is_convex=False)
+
+    def draw_solution(self, result: mp.MathematicalProgramResult):
+        x_sol = result.GetSolution(self.vars.x)
+        phi_sol = result.GetSolution(self.vars.phi)
+        for edge in self.graph.edges:
+            phi_edge_sol = phi_sol[self.graph.edge_index(edge)]
+            if  phi_edge_sol > 1E-3:
+                head = x_sol[self.graph.vertex_index(edge[0])]
+                tail = x_sol[self.graph.vertex_index(edge[1])]
+                options = {'color':'r', 'zorder':2,
+                    'arrowstyle':'simple, head_width=5, head_length=12'}
+                arrow = patches.FancyArrowPatch(head, tail, **options)
+                plt.gca().add_patch(arrow)
+                plt.text(*((head + tail) / 2), r"$\phi=$"+f"{phi_edge_sol}", {"c":"b"})

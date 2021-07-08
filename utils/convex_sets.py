@@ -5,6 +5,7 @@ import matplotlib.patches as patches
 from itertools import product
 from scipy.spatial import ConvexHull, HalfspaceIntersection
 from pydrake.all import Expression, MathematicalProgram, MosekSolver, eq, le
+import pydrake.solvers.mathematicalprogram as mp
 
 class ConvexSet():
 
@@ -29,6 +30,9 @@ class ConvexSet():
 
     def add_membership_constraint(self, prog, x):
         return self.add_perspective_constraint(prog, 1, x)
+
+    def add_constraint_nlp(self, prog, x):
+        return self.add_membership_constraint(prog, x)
 
     def plot(self, **kwargs):
         if self.dimension != 2:
@@ -66,6 +70,9 @@ class Singleton(ConvexSet):
 
     def add_perspective_constraint(self, prog, scale, x):
         return prog.AddLinearConstraint(eq(x, self.center * scale))
+
+    def add_constraint_nlp(self, prog, x):
+        return prog.AddBoundingBoxConstraint(self.center, self.center, x)
 
     def _plot(self, **kwargs):
         plt.scatter(*self.center, c='k')
@@ -247,6 +254,15 @@ class Ellipsoid(ConvexSet):
 
         return cone_constraint
 
+    def add_constraint_nlp(self, prog, x):
+        # (x-self.center)' * A * (x - center) <= 1
+        quadratic_con = mp.QuadraticConstraint(
+            2 * self.A, -2 *self.A.dot(self.center),
+            1 - self.center.dot(self.A.dot(self.center)),
+            1 - self.center.dot(self.A.dot(self.center)))
+        quadratic_con.set_description("ellipsoid containment")
+        return prog.AddConstraint(quadratic_con, x)
+
     def _cheb_constraint(self, prog, x, r):
         '''Section 8.5.1 of Boyd and Vandenberghe - Convex Optimization.'''
         
@@ -301,6 +317,9 @@ class Intersection(ConvexSet):
 
     def add_perspective_constraint(self, prog, scale, x):
         return [X.add_perspective_constraint(prog, scale, x) for X in self.sets]
+
+    def add_constraint_nlp(self, prog, x):
+        return [X.add_constraint_nlp(prog, x) for X in self.sets]
 
     def _compute_center(self):
 
@@ -357,6 +376,9 @@ class CartesianProduct(ConvexSet):
 
     def add_perspective_constraint(self, prog, scale, x):
         return [X.add_perspective_constraint(prog, scale, p) for p, X in zip(self.split(x), self.sets)]
+
+    def add_constraint_nlp(self, prog, x):
+        return [X.add_constraint_nlp(prog, p) for p, X in zip(self.split(x), self.sets)]
 
     def _compute_center(self):
         return np.concatenate([X.center for X in self.sets])
